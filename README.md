@@ -1,6 +1,8 @@
 # STM32WB55_custom_arduino_bootloader
 an example of custom bootloader for the STM32WB55 which uses regular arduino-platform code for the bootloader.
 
+I've named it (quite selfishly): Thijs Over-The-Air Loader-of-Boots (because my name is Thijs and i'm using this to make a BLE OTA bootloader)
+
 There exist bootloaders for STM32 devices, and ST's examples sketches includes an OTA bootloader for the STM32WB55 specifically, HOWEVER, most of these examples write the bootloader in lower-level C, and alter source files to insert the bootloader early in the startup process. This platformIO project however, starts up like a normal STM32-arduino-platform device, which lets you write the bootloader in the trusty setup() & loop() functions we've all grown accustomed to. Existing bootloaders are often inserted early in the startup process because (it's faster, but also because) it means you can run the regular initialization functions afterwards. This code differs, in that it initializes to full arduino-levels (of comfort/ease), and then (in order to jump to the user-application) un-initializes everything again, just so it can be safely re-initialized by the user-application. I spent several days pouring over the reference manual and the various layers of STM32 abstraction to find the default register settings and the correct order to deactivate things. (it mostly took a while because the STM32WB55 will crash so hard that even the ST-link debugger becomes unresponsive). Unfortunately, it does (currently) take about 124ms between jumping to the user-application and its setup() function running. I am still working on identifying this delay (it might be oscillator-related, not sure yet)
 
 Usage: (see example project)
