@@ -44,7 +44,8 @@ The code below is still in its infancy in terms of security,
 
     if(jump) { // just move on to user-program
       delay(25); // allow some time for the serial output buffer to clear
-      TOTALB::jumpToProgram(); // un-initializes microcontroller and jumps to user-application ResetHandler()
+      const bool leave_LSE_same = true; // leaving the LSE initialized (usualy ON) can save ~124ms at re-initialization time. It might cause niche issues
+      TOTALB::jumpToProgram(leave_LSE_same); // un-initializes microcontroller and jumps to user-application ResetHandler()
       //// this point is only reached if jumpToProgram() refused to jump (if, for example, checkJumpLocation() returned false)
       //// it's important to note that the clocks have been disabled and peripherals reset at this point,
       ////  so your best course of action is make sure next time around jump==false (e.g. by setting a flag in flash/backup-domain and calling a software-reset)

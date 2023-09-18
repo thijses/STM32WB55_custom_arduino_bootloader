@@ -42,6 +42,10 @@ LL_RCC_ClearResetFlags(); clears reset flags (Note: try to find, see if weak res
 #ifndef TOTALB_FUNCS_h // include only once
 #define TOTALB_FUNCS_h
 
+#ifndef TOTALB_PROGRAM_START
+  #error("TOTALB_funcs.h error: TOTALB_PROGRAM_START not defined! Only include this header if this is bootloader code")
+#endif
+
 #include <Arduino.h> // used for Serial (for debugging)
 
 #include <stm32wbxx_hal_flash_ex.h> // for HAL_FLASHEx_OBGetConfig
@@ -53,8 +57,9 @@ namespace TOTALB {
   #include <lock_resource.h> // for undo_SystemClock_Config() 
   
   /// @brief undoes what SystemClock_Config() did (see variant_P_NUCLEO_WB55RG.cpp) to bring clocks to a state similar to just-after-reset
+  /// @param leave_LSE_same leaves LSE as it is (NOTE: might cause niche issues, BUT it does save ~124ms of re-initialization time after jump)
   /// @return HAL_OK, unless something is very wrong
-  HAL_StatusTypeDef undo_SystemClock_Config() {
+  HAL_StatusTypeDef undo_SystemClock_Config(bool leave_LSE_same=false) {
     /** revert the clocks & oscilators to their reset values
     the order of these steps is very important!
     The SystemClock_Config function does it forwards, like:
@@ -104,11 +109,11 @@ namespace TOTALB {
     if (err != HAL_OK) { /* Error_Handler(); */ return(err); }
     /* Initializes the CPU, AHB and APB busses clocks */
     RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI | RCC_OSCILLATORTYPE_HSI48
-                                      | RCC_OSCILLATORTYPE_HSE | RCC_OSCILLATORTYPE_LSE;
+                                      | RCC_OSCILLATORTYPE_HSE | ((!leave_LSE_same) ? RCC_OSCILLATORTYPE_LSE : 0);
     RCC_OscInitStruct.HSEState = RCC_HSE_OFF; // turn off
     RCC_OscInitStruct.HSIState = RCC_HSI_OFF; // turn off
     RCC_OscInitStruct.HSI48State = RCC_HSI48_OFF; // turn off
-    RCC_OscInitStruct.LSEState = RCC_LSE_OFF; // turn off
+    RCC_OscInitStruct.LSEState = RCC_LSE_OFF; // turn off (unless leave_LSE_same is used (to save ~124ms re-init time))
     RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT; // already at default
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE; // already at default
     err = HAL_RCC_OscConfig(&RCC_OscInitStruct);
@@ -146,10 +151,11 @@ bool checkJumpLocation() {
 }
 
 /// @brief de-initialize clocks & peripherals and attempt to start user-application
-void jumpToProgram() {
+/// @param leave_LSE_same leaves LSE as it is (NOTE: might cause niche issues, BUT it does save ~124ms of re-initialization time after jump)
+void jumpToProgram(bool leave_LSE_same=false) {
   //// before jumping to the new app's reset handler, the system needs to be brought to reset-like state
   //// the most important factor is resetting the clock & oscillator configs (without this step, it would crash so hard that it takes JTAG debuggers down with it)
-  if(undo_SystemClock_Config() != HAL_OK) { return; } // should always return HAL_OK
+  if(undo_SystemClock_Config(leave_LSE_same) != HAL_OK) { return; } // should always return HAL_OK
   //// repeated initialization of peripherals like the USART will also result in a nice silent crash..., so we're resetting all the peripherals next:
   HAL_DeInit(); // resets all peripherals (always returns HAL_OK)
   //// alternatively, you could overload the weak function HAL_MspDeInit() and make it call undo_SystemClock_Config(). HAL_DeInit() will call HAL_MspDeInit() after reset peripherals
