@@ -42,9 +42,9 @@ LL_RCC_ClearResetFlags(); clears reset flags (Note: try to find, see if weak res
 #ifndef TOTALB_FUNCS_h // include only once
 #define TOTALB_FUNCS_h
 
-#ifndef TOTALB_PROGRAM_START
-  #error("TOTALB_funcs.h error: TOTALB_PROGRAM_START not defined! Only include this header if this is bootloader code")
-#endif
+// #ifndef TOTALB_PROGRAM_START
+//   #error("TOTALB_funcs.h error: TOTALB_PROGRAM_START not defined! Only include this header if this is bootloader code")
+// #endif
 
 #include <Arduino.h> // used for Serial (for debugging)
 
@@ -55,6 +55,7 @@ namespace TOTALB {
 //// there is some variant-specific code below:
 #ifdef ARDUINO_P_NUCLEO_WB55RG  // Note: alternative defines: STM32WB55xx
   #include <lock_resource.h> // for undo_SystemClock_Config() 
+  // #include <shci.h> // from STM32duinoBLE library, for SHCI_C2_Reinit() (to reset CPU2 (BLE) before jump). Commented out because i don't want to include STM32duinoBLE
   
   /// @brief undoes what SystemClock_Config() did (see variant_P_NUCLEO_WB55RG.cpp) to bring clocks to a state similar to just-after-reset
   /// @param leave_LSE_same leaves LSE as it is (NOTE: might cause niche issues, BUT it does save ~124ms of re-initialization time after jump)
@@ -136,24 +137,33 @@ namespace TOTALB {
 
 /// @brief check whether jumping to TOTALB_PROGRAM_START is (likely to be) safe
 /// @return true if it looks safe enough, false if you should ABSOLUTELY NOT jump there
-bool checkJumpLocation() {
+template<uint32_t __PROGRAM_START>
+bool _checkJumpLocation() {
   //// first and foremose, check if the flash 
-  const uint32_t* userAppStartPtr = (uint32_t*)(FLASH_BASE + TOTALB_PROGRAM_START); // (a pointer to) the place in flash where the actual app starts
+  const uint32_t* userAppStartPtr = (uint32_t*)(FLASH_BASE + __PROGRAM_START); // (a pointer to) the place in flash where the actual app starts
   const uint32_t resetHandlerAddress = *(userAppStartPtr + 1); // find the reset handler function (2nd 32bit value) in the app's vector table (Note +1=+4_bytes=+(sizeof(ptr)))
   uint32_t newStackAddress = *userAppStartPtr; // read new stack pointer from flash (1st value of program) (usually it's 0x20030000)
   if(((newStackAddress == 0xFFFFFFFF) || (newStackAddress == 0x00000000))
       || ((resetHandlerAddress == 0xFFFFFFFF) || (resetHandlerAddress == 0x00000000))) { return(false); } // the stack pointer should not look like empty flash
   //// similarly, you could check if you're about to jump into restricted space (like CPU2's Secure Flash)
   uint32_t SFSA = getSecureFlashStartAddr(); // obtain SFSA from option bytes (this is where CPU2's restricted territory begins)
-  if((FLASH_BASE + TOTALB_PROGRAM_START) >= SFSA) { return(false); } // absolutely DO NOT jump to areas that CPU1 has no business in
+  if((FLASH_BASE + __PROGRAM_START) >= SFSA) { return(false); } // absolutely DO NOT jump to areas that CPU1 has no business in
   //// else
   return(true);
 }
 
-/// @brief de-initialize clocks & peripherals and attempt to start user-application
+#ifdef TOTALB_PROGRAM_START
+  /// @brief check whether jumping to TOTALB_PROGRAM_START is (likely to be) safe
+  /// @return true if it looks safe enough, false if you should ABSOLUTELY NOT jump there
+  bool checkJumpLocation() { return(_checkJumpLocation<TOTALB_PROGRAM_START>()); }
+#endif
+
+/// @brief (semi-private template version (not recommended)) de-initialize clocks & peripherals and attempt to start program at <__PROGRAM_START>
 /// @param leave_LSE_same leaves LSE as it is (NOTE: might cause niche issues, BUT it does save ~124ms of re-initialization time after jump)
-void jumpToProgram(bool leave_LSE_same=false) {
+template<uint32_t __PROGRAM_START>
+void _jumpTo(bool leave_LSE_same=false) {
   //// before jumping to the new app's reset handler, the system needs to be brought to reset-like state
+  /* NOTE: call SHCI_C2_Reinit() from the STM32duinoBLE library (or Cube FW?) for resetting CPU2 (in case BLE was used before jump)*/
   //// the most important factor is resetting the clock & oscillator configs (without this step, it would crash so hard that it takes JTAG debuggers down with it)
   if(undo_SystemClock_Config(leave_LSE_same) != HAL_OK) { return; } // should always return HAL_OK
   //// repeated initialization of peripherals like the USART will also result in a nice silent crash..., so we're resetting all the peripherals next:
@@ -172,12 +182,12 @@ void jumpToProgram(bool leave_LSE_same=false) {
       + DWT is for debugging (JTAG?), so it can be left on
       + IPclock can be ignored (left enabled?), i think(?)
   */
-  const uint32_t* userAppStartPtr = (uint32_t*)(FLASH_BASE + TOTALB_PROGRAM_START); // (a pointer to) the place in flash where the actual app starts
+  const uint32_t* userAppStartPtr = (uint32_t*)(FLASH_BASE + __PROGRAM_START); // (a pointer to) the place in flash where the actual app starts
   uint32_t newStackAddress = *userAppStartPtr; // read new stack pointer from flash (1st value of program) (usually it's 0x20030000)
   typedef void (*fct_t)(void);
   fct_t app_reset_handler = (fct_t) *(userAppStartPtr + 1); // find the reset handler function (2nd 32bit value) in the app's vector table (Note +1=+4_bytes=+(sizeof(ptr)))
   //// you can do some last-minute reassuring checks here, like: (Note: the clocks and peripherals have been disabled though, so debug printing is not easy)
-  if(!checkJumpLocation()) { return; } // the stack pointer should not look like empty flash
+  // if(!checkJumpLocation()) { return; } // the stack pointer should not look like empty flash
   //// now jump to the app:
   SCB->VTOR = (volatile uint32_t) userAppStartPtr; // set the Vector table pointer to the app's one
   __set_MSP(newStackAddress); // switch stack address pointer to the app's one (1st 32bit value in the vector table) (which is the stack pointer address) (probably the same as current)
@@ -190,6 +200,19 @@ void jumpToProgram(bool leave_LSE_same=false) {
   */
   __WFI(); // 'wait for interrupt'
 }
+
+#ifdef TOTALB_PROGRAM_START
+  /// @brief de-initialize clocks & peripherals and attempt to start user-application (@ TOTALB_PROGRAM_START)
+  /// @param leave_LSE_same leaves LSE as it is (NOTE: might cause niche issues, BUT it does save ~124ms of re-initialization time after jump)
+  void jumpToProgram(bool leave_LSE_same=false) { _jumpTo<TOTALB_PROGRAM_START>(leave_LSE_same); }
+#endif
+
+/// @brief check whether jumping to the bootloader is (likely to be) safe (it ABSOLUTELY SHOULD BE, BTW)
+/// @return true if it looks safe enough, false if you should ABSOLUTELY NOT jump there
+bool checkBootloaderLocation() { return(_checkJumpLocation< 0 >()); }
+/// @brief (not recommended, software-reset is preferred) de-initialize clocks & peripherals and attempt to start bootloader (again)
+/// @param leave_LSE_same leaves LSE as it is (NOTE: might cause niche issues, BUT it does save ~124ms of re-initialization time after jump)
+void jumpToBootloader(bool leave_LSE_same=false) { _jumpTo< 0 >(leave_LSE_same); } // bootloader starts at FLASH_BASE, so offset == 0
 
 } // namespace TOTALB
 

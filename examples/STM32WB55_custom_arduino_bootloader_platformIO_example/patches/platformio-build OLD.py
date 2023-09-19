@@ -52,8 +52,7 @@ variants_dir = (
 )
 variant_dir = join(variants_dir, variant)
 inc_variant_dir = variant_dir
-if not IS_WINDOWS and not (
-    set(["_idedata", "idedata"]) & set(COMMAND_LINE_TARGETS) and " " not in variant_dir
+if not IS_WINDOWS and not (env.IsIntegrationDump() and " " not in variant_dir
 ):
     inc_variant_dir = variant_dir.replace("(", r"\(").replace(")", r"\)")
 
@@ -113,6 +112,17 @@ def process_usb_configuration(cpp_defines):
 
     if any(f in env["CPPDEFINES"] for f in ("USBD_USE_CDC", "USBD_USE_HID_COMPOSITE")):
         env.Append(CPPDEFINES=["HAL_PCD_MODULE_ENABLED"])
+
+
+def get_arm_math_lib(cpu):
+    if "m33" in cpu:
+        return "arm_ARMv8MMLlfsp_math"
+    elif "m4" in cpu:
+        return "arm_cortexM4lf_math"
+    elif "m7" in cpu:
+        return "arm_cortexM7lfsp_math"
+
+    return "arm_cortex%sl_math" % cpu[7:9].upper()
 
 
 def configure_application_offset(mcu, upload_protocol):
@@ -208,6 +218,7 @@ def get_arduino_board_id(board_config, mcu):
 
     return board_id.upper()
 
+
 board_id = get_arduino_board_id(board_config, mcu)
 machine_flags = [
     "-mcpu=%s" % board_config.get("build.cpu"),
@@ -225,9 +236,9 @@ env.Append(
     ASPPFLAGS=[
         "-x", "assembler-with-cpp",
     ],
-    CFLAGS=["-std=gnu11"],
+    CFLAGS=["-std=gnu17"],
     CXXFLAGS=[
-        "-std=gnu++14",
+        "-std=gnu++17",
         "-fno-threadsafe-statics",
         "-fno-rtti",
         "-fno-exceptions",
@@ -244,6 +255,7 @@ env.Append(
         series,
         ("ARDUINO", 10808),
         "ARDUINO_ARCH_STM32",
+        "NDEBUG",
         "ARDUINO_%s" % board_id,
         ("BOARD_NAME", '\\"%s\\"' % board_id),
         "HAL_UART_MODULE_ENABLED",
@@ -345,13 +357,16 @@ env.Append(
         "-Wl,--defsym=LD_MAX_SIZE=%d" % board_config.get("upload.maximum_size"),
         "-Wl,--defsym=LD_MAX_DATA_SIZE=%d"
         % board_config.get("upload.maximum_ram_size"),
+        # '"-Wl,-Map=$BUILD_DIR/firmware.map"' // thijs: adding quotation marks fixes the path error, or just commenting out appears to fix it as well
     ],
     LIBS=[
+        get_arm_math_lib(board_config.get("build.cpu")),
         "c",
         "m",
         "gcc",
         "stdc++",
     ],
+    LIBPATH=[join(CMSIS_DIR, "DSP", "Lib", "GCC")],
 )
 
 env.ProcessFlags(board_config.get("build.framework_extra_flags.arduino", ""))
