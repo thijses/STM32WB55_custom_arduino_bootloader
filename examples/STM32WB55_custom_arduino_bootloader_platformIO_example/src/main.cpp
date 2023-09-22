@@ -63,6 +63,12 @@ The code below is still in its infancy in terms of security,
 #else // TOTALB_PROGRAM_START (everything below is the user-application code (post-bootloader)
 //////////////////////////////////////////////////////////////////////////////////////////// application code //////////////////////////////////////////////////////////
   
+  //// first, let's check whether the compiler/platformio settings are correct
+  #ifndef VECT_TAB_OFFSET
+    #error("VECT_TAB_OFFSET not defined!")
+  #endif
+  static_assert(VECT_TAB_OFFSET >= 0x200, "error: VECT_TAB_OFFSET cannot be 0 for post-bootloader application code! (mut be at least 0x200)");
+
   /*
     The user app is just normal code, really nothing special about it,
     EXCEPT, you might want to think of some clever app <-> bootloader communication.

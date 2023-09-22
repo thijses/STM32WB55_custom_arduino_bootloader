@@ -9,16 +9,13 @@ Jumping to the user program takes about ~1.5ms if using 'leave_LSE_same'  (asin 
 
 Usage: (see example project)
 - (to compile the example script, copy the whole library into the lib folder of that project)
-- replace the platformio-build.py script in .platformio\packages\framework-arduinoststm32\tools\platformio  with the one in patches\    (this makes setting a VECT_TAB_OFFSET possible)
-- in the platformio.ini file, there are 2 targets. One is for uploading bootloader code and the other is for uploading application code. (Note: currently, my ST-links are overwriting the bootloader when uploading user-applications. Very annoying, will fix soon).
-- Upload the user-app (by selecting the 'OTA_z_STM32WB55' target)
+- in the platformio.ini file, there are 2 targets. One is for uploading bootloader code and the other is for uploading application code.
+- Upload the user-app (by selecting the 'OTA_z_STM32WB55' target) (Note: if your uploader offset settings are correct, this should not overwrite bootloaders)
 - then upload the bootloader (by selecting the 'BOOTL_STM32WB55' target)
 - watch the serial monitor show it booting twice
 
 
 current problems i'm trying to solve:
-- patching the platformio-build.py script automatically (and perhaps more eligantly than just replacing it)
-- test bluetooth before and after jump
-- add some basic watchdog suggestions
-- add some basic flash/backup-domain flag suggestions
-- (work on the full BLE OTA code that relies on this stuff)
+- find a way to perform SHCI_C2_Reinit() (from the STM32duinoBLE library, but without importing the whole library), or perhaps a more universal CPU2 reset
+- add some basic watchdog example code
+- add some basic flash/backup-domain flag example code
